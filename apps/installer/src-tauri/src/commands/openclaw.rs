@@ -30,8 +30,35 @@ fn pick_registry() -> &'static str {
     }
 }
 
+/// Get the path to npm-cli.js (more reliable than running npm shell script directly).
+fn npm_cli_js(env: &EnvInfo) -> PathBuf {
+    env.node_dir()
+        .join("lib")
+        .join("node_modules")
+        .join("npm")
+        .join("bin")
+        .join("npm-cli.js")
+}
+
+/// Build environment variables for running node/npm.
+fn build_env(env: &EnvInfo) -> Vec<(String, String)> {
+    let node_bin_dir = if cfg!(target_os = "windows") {
+        env.node_dir().to_string_lossy().to_string()
+    } else {
+        env.node_dir().join("bin").to_string_lossy().to_string()
+    };
+
+    let sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+    let system_path = std::env::var("PATH").unwrap_or_default();
+
+    vec![
+        ("PATH".to_string(), format!("{}{}{}", node_bin_dir, sep, system_path)),
+        ("HOME".to_string(), env.home_dir.to_string_lossy().to_string()),
+        ("TMPDIR".to_string(), std::env::temp_dir().to_string_lossy().to_string()),
+    ]
+}
+
 /// After npm install, scan bin dir and node_modules to find the actual openclaw binary.
-/// The package might register a bin with a different name.
 fn find_openclaw_binary(env: &EnvInfo) -> Option<PathBuf> {
     let bin_dir = if cfg!(target_os = "windows") {
         env.npm_prefix()
@@ -39,13 +66,13 @@ fn find_openclaw_binary(env: &EnvInfo) -> Option<PathBuf> {
         env.npm_prefix().join("bin")
     };
 
-    // First: check the expected name
+    // Check expected name first
     let expected = env.openclaw_bin();
     if expected.exists() {
         return Some(expected);
     }
 
-    // Second: scan bin dir for anything openclaw-related
+    // Scan bin dir for anything openclaw-related
     if let Ok(entries) = fs::read_dir(&bin_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_lowercase();
@@ -55,22 +82,18 @@ fn find_openclaw_binary(env: &EnvInfo) -> Option<PathBuf> {
         }
     }
 
-    // Third: check if the package installed but bin has a different name
-    // Look in node_modules/.package-lock.json or the package's package.json
+    // Check node_modules for the package and read its bin field
     let pkg_dir = env.npm_prefix().join("lib").join("node_modules");
     if let Ok(entries) = fs::read_dir(&pkg_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_lowercase();
             if name.contains("openclaw") || name.contains("open-claw") {
-                // Found the package, read its package.json to find bin name
                 let pkg_json = entry.path().join("package.json");
                 if let Ok(content) = fs::read_to_string(&pkg_json) {
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
                         if let Some(bin) = json.get("bin") {
-                            // bin can be a string or an object
                             match bin {
                                 serde_json::Value::String(_) => {
-                                    // bin points to a file, binary name = package name
                                     let pkg_name = json.get("name")
                                         .and_then(|n| n.as_str())
                                         .unwrap_or("openclaw");
@@ -99,29 +122,111 @@ fn find_openclaw_binary(env: &EnvInfo) -> Option<PathBuf> {
     None
 }
 
-/// List contents of bin directory for debugging.
-fn list_bin_dir(env: &EnvInfo) -> String {
+/// List contents of bin dir and node_modules for debugging.
+fn debug_dirs(env: &EnvInfo) -> String {
     let bin_dir = if cfg!(target_os = "windows") {
         env.npm_prefix()
     } else {
         env.npm_prefix().join("bin")
     };
+    let modules_dir = env.npm_prefix().join("lib").join("node_modules");
 
-    let mut items = Vec::new();
+    let mut parts = Vec::new();
+
+    // List bin dir
+    let mut bin_items = Vec::new();
     if let Ok(entries) = fs::read_dir(&bin_dir) {
         for entry in entries.flatten() {
-            items.push(entry.file_name().to_string_lossy().to_string());
+            bin_items.push(entry.file_name().to_string_lossy().to_string());
         }
     }
-    if items.is_empty() {
-        format!("(bin dir {} is empty or missing)", bin_dir.display())
-    } else {
-        format!("bin dir contents: {}", items.join(", "))
+    parts.push(format!("bin/: [{}]", bin_items.join(", ")));
+
+    // List node_modules
+    let mut mod_items = Vec::new();
+    if let Ok(entries) = fs::read_dir(&modules_dir) {
+        for entry in entries.flatten() {
+            mod_items.push(entry.file_name().to_string_lossy().to_string());
+        }
     }
+    parts.push(format!("lib/node_modules/: [{}]", mod_items.join(", ")));
+
+    parts.join("\n")
 }
 
 /// Run `npm install -g openclaw@latest` using the bundled Node.js.
+/// Uses `node npm-cli.js` instead of running npm script directly for reliability.
 pub fn install_openclaw(env: &EnvInfo) -> Result<PathBuf, String> {
+    let node = env.node_bin();
+    let npm_cli = npm_cli_js(env);
+    let prefix = env.npm_prefix();
+
+    if !node.exists() {
+        return Err(format!("node not found at: {}", node.display()));
+    }
+
+    // Fallback: if npm-cli.js doesn't exist, try the npm script
+    if !npm_cli.exists() {
+        log::warn!("npm-cli.js not found at {}, trying npm bin", npm_cli.display());
+        return install_openclaw_via_npm_bin(env);
+    }
+
+    let registry = pick_registry();
+    log::info!(
+        "Installing openclaw: node {} install -g openclaw@latest --prefix {} --registry {}",
+        npm_cli.display(),
+        prefix.display(),
+        registry,
+    );
+
+    let envs = build_env(env);
+    let output = Command::new(node.as_os_str())
+        .arg(npm_cli.as_os_str())
+        .args([
+            "install",
+            "-g",
+            "openclaw@latest",
+            "--prefix",
+            &prefix.to_string_lossy(),
+            "--registry",
+            registry,
+        ])
+        .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .output()
+        .map_err(|e| format!("Failed to run node: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    log::info!("npm stdout: {}", stdout);
+    log::info!("npm stderr: {}", stderr);
+
+    if !output.status.success() {
+        return Err(format!(
+            "npm install failed (exit {}):\nstdout: {}\nstderr: {}",
+            output.status.code().unwrap_or(-1),
+            stdout,
+            stderr
+        ));
+    }
+
+    // Find the actual binary
+    match find_openclaw_binary(env) {
+        Some(bin_path) => {
+            log::info!("openclaw binary found at: {}", bin_path.display());
+            Ok(bin_path)
+        }
+        None => {
+            let listing = debug_dirs(env);
+            Err(format!(
+                "npm install succeeded but openclaw binary not found.\n{}\nstdout: {}\nstderr: {}",
+                listing, stdout, stderr
+            ))
+        }
+    }
+}
+
+/// Fallback: use npm bin directly (less reliable, for when npm-cli.js path is different).
+fn install_openclaw_via_npm_bin(env: &EnvInfo) -> Result<PathBuf, String> {
     let npm = env.npm_bin();
     let prefix = env.npm_prefix();
 
@@ -130,11 +235,7 @@ pub fn install_openclaw(env: &EnvInfo) -> Result<PathBuf, String> {
     }
 
     let registry = pick_registry();
-    log::info!(
-        "Installing openclaw via npm (registry={}) at prefix {}",
-        registry,
-        prefix.display()
-    );
+    let envs = build_env(env);
 
     let output = Command::new(npm.as_os_str())
         .args([
@@ -146,30 +247,29 @@ pub fn install_openclaw(env: &EnvInfo) -> Result<PathBuf, String> {
             "--registry",
             registry,
         ])
-        .env("PATH", node_path_env(env))
+        .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .output()
         .map_err(|e| format!("Failed to run npm: {}", e))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    log::info!("npm stdout: {}", stdout);
-    log::info!("npm stderr: {}", stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        return Err(format!("npm install failed:\n{}\n{}", stdout, stderr));
+        return Err(format!(
+            "npm install failed (exit {}):\nstdout: {}\nstderr: {}",
+            output.status.code().unwrap_or(-1),
+            stdout,
+            stderr
+        ));
     }
 
-    // Find the actual binary
     match find_openclaw_binary(env) {
-        Some(bin_path) => {
-            log::info!("openclaw binary found at: {}", bin_path.display());
-            Ok(bin_path)
-        }
+        Some(bin_path) => Ok(bin_path),
         None => {
-            let listing = list_bin_dir(env);
+            let listing = debug_dirs(env);
             Err(format!(
-                "npm install succeeded but openclaw binary not found.\n{}\nnpm output: {}",
-                listing, stdout
+                "npm install succeeded but openclaw binary not found.\n{}\nstdout: {}\nstderr: {}",
+                listing, stdout, stderr
             ))
         }
     }
@@ -177,17 +277,20 @@ pub fn install_openclaw(env: &EnvInfo) -> Result<PathBuf, String> {
 
 /// Run `npm uninstall -g openclaw` using the bundled Node.js.
 pub fn uninstall_openclaw(env: &EnvInfo) -> Result<(), String> {
-    let npm = env.npm_bin();
+    let node = env.node_bin();
+    let npm_cli = npm_cli_js(env);
     let prefix = env.npm_prefix();
 
-    if !npm.exists() {
-        log::warn!("npm not found, skipping uninstall");
+    if !node.exists() || !npm_cli.exists() {
+        log::warn!("node/npm not found, skipping uninstall");
         return Ok(());
     }
 
     log::info!("Uninstalling openclaw...");
 
-    let output = Command::new(npm.as_os_str())
+    let envs = build_env(env);
+    let output = Command::new(node.as_os_str())
+        .arg(npm_cli.as_os_str())
         .args([
             "uninstall",
             "-g",
@@ -195,7 +298,7 @@ pub fn uninstall_openclaw(env: &EnvInfo) -> Result<(), String> {
             "--prefix",
             &prefix.to_string_lossy(),
         ])
-        .env("PATH", node_path_env(env))
+        .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .output()
         .map_err(|e| format!("Failed to run npm uninstall: {}", e))?;
 
@@ -205,17 +308,4 @@ pub fn uninstall_openclaw(env: &EnvInfo) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-/// Construct a PATH that includes our bundled node/bin.
-fn node_path_env(env: &EnvInfo) -> String {
-    let node_bin_dir = if cfg!(target_os = "windows") {
-        env.node_dir().to_string_lossy().to_string()
-    } else {
-        env.node_dir().join("bin").to_string_lossy().to_string()
-    };
-
-    let sep = if cfg!(target_os = "windows") { ";" } else { ":" };
-    let system_path = std::env::var("PATH").unwrap_or_default();
-    format!("{}{}{}", node_bin_dir, sep, system_path)
 }
