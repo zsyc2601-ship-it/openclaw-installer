@@ -1,0 +1,29 @@
+node_modules/
+dist/
+target/
+.gradle/
+build/
+.pnpm-store/
+pnpm-lock.yaml
+
+# Node.js archives (large, download via script)
+apps/installer/src-tauri/resources/node-*
+apps/installer/src-tauri/resources/nssm.exe
+
+# Tauri generated
+apps/installer/src-tauri/gen/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.iml
+local.properties
+
+# Deploy keys (never commit!)
+openclaw_deploy
+openclaw_deploy.pub
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+{
+  "name": "openclaw-deploy",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -C apps/installer tauri dev",
+    "build": "pnpm -C apps/installer tauri build",
+    "download-node": "bash scripts/download-node.sh"
+  }
+}

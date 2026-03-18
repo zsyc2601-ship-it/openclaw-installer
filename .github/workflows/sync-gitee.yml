@@ -1,0 +1,55 @@
+name: Sync to Gitee
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror to Gitee
+        uses: wearerequired/git-mirror-action@master
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.GITEE_SSH_KEY }}
+        with:
+          source-repo: "git@github.com:${{ github.repository }}.git"
+          destination-repo: "git@gitee.com:zsyc2601-ship-it/openclaw-installer.git"
+
+  sync-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download GitHub release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Create Gitee release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Creating Gitee release for $TAG..."
+
+          # Create release via Gitee API
+          curl -X POST "https://gitee.com/api/v5/repos/zsyc2601-ship-it/openclaw-installer/releases" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"access_token\": \"$GITEE_TOKEN\",
+              \"tag_name\": \"$TAG\",
+              \"name\": \"$TAG\",
+              \"body\": \"自动同步自 GitHub Release\",
+              \"prerelease\": false
+            }"
+
+          echo "Release created. Upload assets manually or via Gitee API."

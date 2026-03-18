@@ -1,0 +1,41 @@
+services:
+  # Download Node.js archives only
+  download-node:
+    image: curlimages/curl:latest
+    volumes:
+      - ./apps/installer/src-tauri/resources:/out
+      - ./scripts:/scripts:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        NODE_VERSION=22.14.0
+        cd /out
+        for target in "darwin-arm64.tar.xz" "darwin-x64.tar.xz" "win-x64.zip"; do
+          FILE="node-v$${NODE_VERSION}-$$target"
+          if [ ! -f "$$FILE" ]; then
+            echo "[download] $$FILE"
+            curl -fSL --progress-bar -o "$$FILE" "https://nodejs.org/dist/v$${NODE_VERSION}/$$FILE"
+          else
+            echo "[skip] $$FILE exists"
+          fi
+        done
+        ls -lh /out/node-*
+
+  # Full Linux build (produces .deb + .AppImage)
+  build-linux:
+    build: .
+    volumes:
+      - build-output:/bundle
+
+  # Frontend-only build (for dev/testing)
+  frontend:
+    image: node:22-bookworm-slim
+    working_dir: /app/apps/installer
+    volumes:
+      - .:/app
+      - node_modules:/app/apps/installer/node_modules
+    command: sh -c "npm install -g pnpm@9 && pnpm install && pnpm build"
+
+volumes:
+  build-output:
+  node_modules:
