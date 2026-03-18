@@ -35,6 +35,7 @@ fn generate_plist(env: &EnvInfo, openclaw_bin: &Path) -> String {
         <string>gateway</string>
         <string>--port</string>
         <string>18789</string>
+        <string>--allow-unconfigured</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -130,7 +131,7 @@ fn register_nssm(env: &EnvInfo, openclaw_bin: &Path) -> Result<(), String> {
     let _ = Command::new(&nssm).args(["stop", "OpenClaw"]).output();
     let _ = Command::new(&nssm).args(["remove", "OpenClaw", "confirm"]).output();
 
-    let args_str = format!("\"{}\" gateway --port 18789", oc_bin);
+    let args_str = format!("\"{}\" gateway --port 18789 --allow-unconfigured", oc_bin);
     run_cmd(&nssm, &["install", "OpenClaw", &node, &args_str])?;
     run_cmd(&nssm, &["set", "OpenClaw", "AppDirectory", &app_dir])?;
     run_cmd(&nssm, &["set", "OpenClaw", "DisplayName", "OpenClaw Gateway"])?;
@@ -179,7 +180,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart="{node}" "{openclaw}" gateway --port 18789
+ExecStart="{node}" "{openclaw}" gateway --port 18789 --allow-unconfigured
 Restart=always
 RestartSec=5
 Environment=PATH={node_dir}:/usr/local/bin:/usr/bin:/bin
