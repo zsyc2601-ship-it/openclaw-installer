@@ -54,7 +54,7 @@ jobs:
       - name: Download Node.js archive (current platform only)
         shell: bash
         run: |
-          NODE_VERSION="22.14.0"
+          NODE_VERSION="22.22.1"
           TARGET_DIR="apps/installer/src-tauri/resources"
           mkdir -p "$TARGET_DIR"
           ARCH="${{ matrix.node-arch }}"

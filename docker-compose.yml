@@ -8,7 +8,7 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
-        NODE_VERSION=22.14.0
+        NODE_VERSION=22.22.1
         cd /out
         for target in "darwin-arm64.tar.xz" "darwin-x64.tar.xz" "win-x64.zip"; do
           FILE="node-v$${NODE_VERSION}-$$target"

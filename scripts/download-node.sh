@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NODE_VERSION="22.14.0"
+NODE_VERSION="22.22.1"
 TARGET_DIR="apps/installer/src-tauri/resources"
 
 # Auto-select mirror: npmmirror (China) or official

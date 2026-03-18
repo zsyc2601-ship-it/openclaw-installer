@@ -11,11 +11,11 @@ use super::env_detect::EnvInfo;
 /// Locate the bundled Node.js archive from Tauri resources.
 fn find_node_archive(app_handle: &tauri::AppHandle, env: &EnvInfo) -> Result<PathBuf, String> {
     let archive_name = match (env.os.as_str(), env.arch.as_str()) {
-        ("macos", "aarch64") => "node-v22.14.0-darwin-arm64.tar.xz",
-        ("macos", "x86_64") => "node-v22.14.0-darwin-x64.tar.xz",
-        ("linux", "x86_64") => "node-v22.14.0-linux-x64.tar.xz",
-        ("linux", "aarch64") => "node-v22.14.0-linux-arm64.tar.xz",
-        ("windows", "x86_64") => "node-v22.14.0-win-x64.zip",
+        ("macos", "aarch64") => "node-v22.22.1-darwin-arm64.tar.xz",
+        ("macos", "x86_64") => "node-v22.22.1-darwin-x64.tar.xz",
+        ("linux", "x86_64") => "node-v22.22.1-linux-x64.tar.xz",
+        ("linux", "aarch64") => "node-v22.22.1-linux-arm64.tar.xz",
+        ("windows", "x86_64") => "node-v22.22.1-win-x64.zip",
         _ => return Err(format!("Unsupported platform: {}-{}", env.os, env.arch)),
     };
 
@@ -48,7 +48,7 @@ fn extract_tar_xz(archive_path: &Path, target_dir: &Path) -> Result<(), String> 
     fs::create_dir_all(target_dir)
         .map_err(|e| format!("Cannot create target directory: {}", e))?;
 
-    // Strip the top-level directory (e.g., "node-v22.14.0-darwin-arm64/")
+    // Strip the top-level directory (e.g., "node-v22.22.1-darwin-arm64/")
     let entries = archive
         .entries()
         .map_err(|e| format!("Cannot read archive entries: {}", e))?;
@@ -117,7 +117,7 @@ fn extract_zip(archive_path: &Path, target_dir: &Path) -> Result<(), String> {
             .ok_or_else(|| "Invalid path in zip".to_string())?
             .to_owned();
 
-        // Strip top-level directory (e.g., "node-v22.14.0-win-x64/")
+        // Strip top-level directory (e.g., "node-v22.22.1-win-x64/")
         let components: Vec<_> = raw_path.components().collect();
         if components.len() <= 1 {
             continue;
