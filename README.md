@@ -1,20 +1,20 @@
 # OpenClaw Installer
 
-OpenClaw AI Gateway 的一键安装器。用户只需点一个按钮（或一行命令），无需终端、无需自己装 Node.js、无需 Docker。
+One-click installer for the OpenClaw AI Gateway. No terminal, no manual Node.js setup, no Docker required.
 
-## 支持平台
+## Supported Platforms
 
-| 平台 | 安装包 | 服务管理 | 状态 |
-|------|--------|---------|------|
+| Platform | Package | Service Manager | Status |
+|----------|---------|----------------|--------|
 | macOS ARM (Apple Silicon) | `.dmg` | launchd | ✅ |
 | macOS Intel | `.dmg` | launchd | ✅ |
 | Windows x64 | `.msi` / `.exe` | NSSM | ✅ |
 | Linux x64 | `.deb` / `.AppImage` | systemd --user | ✅ |
 | Linux ARM64 | `.deb` / `.AppImage` | systemd --user | ✅ |
-| Android（遥控器） | `.apk` | — | ✅ |
-| Android（本机 Server） | `.apk` | Foreground Service | ✅ |
+| Android (Remote) | `.apk` | — | ✅ |
+| Android (Server) | `.apk` | Foreground Service | ✅ |
 
-## 用户一键安装
+## Quick Install
 
 ### macOS / Linux
 
@@ -28,11 +28,11 @@ curl -fsSL https://github.com/zsyc2601-ship-it/openclaw-installer/raw/main/scrip
 irm https://github.com/zsyc2601-ship-it/openclaw-installer/raw/main/scripts/install.ps1 | iex
 ```
 
-### 中国大陆用户
+### China Mainland Users
 
-脚本会自动检测网络环境，如果 GitHub 不通则自动切换到 Gitee 镜像。npm 安装也会自动使用 npmmirror 加速。
+The scripts auto-detect network environment and fall back to Gitee mirror + npmmirror npm registry.
 
-如果自动检测失败，可手动使用 Gitee 源：
+Manual Gitee source:
 
 ```bash
 # macOS / Linux
@@ -44,145 +44,141 @@ irm https://gitee.com/zsyc2601-ship-it/openclaw-installer/raw/main/scripts/insta
 
 ### Android
 
-从 [Releases](https://github.com/zsyc2601-ship-it/openclaw-installer/releases) 下载：
-- `openclaw-companion.apk` — 遥控器，扫码连接电脑上的 Gateway
-- `openclaw-server.apk` — 在手机上直接运行 OpenClaw Gateway
+Download from [Releases](https://github.com/zsyc2601-ship-it/openclaw-installer/releases):
+- **openclaw-companion.apk** — Remote control, scan QR to connect to desktop Gateway
+- **openclaw-server.apk** — Run OpenClaw Gateway directly on your phone
 
 ---
 
-## 安装流程（用户视角）
+## How It Works
 
 ```
-执行一键命令 / 下载安装包
+Run one-click command / Download installer
          │
          ▼
 ┌──────────────────┐
-│  [ 一键安装 ]     │  ← 用户唯一操作：点这个按钮
+│  [ One-Click      │
+│    Install ]      │  ← The only thing the user does: click this button
 └──────────────────┘
-         │  全自动
+         │  Fully automatic
          ▼
-Step 1: 检测系统环境        ~0.5s
-Step 2: 释放内嵌 Node.js    ~2s
-Step 3: npm install openclaw ~30-120s
-Step 4: 注册系统服务         ~2s
-Step 5: 启动 Gateway        ~3s
-Step 6: 健康检查            ~2s
+Step 1: Detect system environment    ~0.5s
+Step 2: Extract bundled Node.js      ~2s
+Step 3: npm install openclaw         ~30-120s
+Step 4: Register system service      ~2s
+Step 5: Start Gateway                ~3s
+Step 6: Health check                 ~2s
          │
          ▼
 ┌──────────────────┐
-│  输入 API Key     │  ← 唯一需要填写的东西
+│  Enter API Key    │  ← The only thing to fill in
 └──────────────────┘
          │
          ▼
 ┌──────────────────┐
-│  ✅ 安装完成       │
-│  Gateway 运行中   │
+│  ✅ Done!         │
+│  Gateway running  │
 │  localhost:18789  │
 └──────────────────┘
 ```
 
-安装完成后 OpenClaw 作为系统服务常驻后台，重启电脑自动恢复。
+After installation, OpenClaw runs as a system service in the background. It auto-restarts on reboot.
 
 ---
 
-## 开发者指南
+## Developer Guide
 
-### 项目结构
+### Project Structure
 
 ```
 ├── apps/
-│   ├── installer/              # Tauri 2.x 桌面安装器 (macOS/Windows/Linux)
-│   │   ├── src/                # React + TypeScript 前端
-│   │   └── src-tauri/          # Rust 后端
-│   ├── android/                # Android 遥控器 (Kotlin + Compose)
-│   └── android-server/         # Android Server (内嵌 Node.js)
+│   ├── installer/              # Tauri 2.x desktop installer (macOS/Windows/Linux)
+│   │   ├── src/                # React + TypeScript frontend
+│   │   └── src-tauri/          # Rust backend
+│   ├── android/                # Android companion (Kotlin + Compose)
+│   └── android-server/         # Android server (embedded Node.js)
 ├── scripts/
-│   ├── install.sh              # macOS/Linux 一键安装脚本
-│   ├── install.ps1             # Windows 一键安装脚本
-│   ├── download-node.sh        # 下载各平台 Node.js 归档
-│   ├── download-node-android.sh # 下载 Android Node.js
-│   └── download-nssm.sh        # 下载 NSSM (Windows 服务管理)
+│   ├── install.sh              # macOS/Linux one-click install script
+│   ├── install.ps1             # Windows one-click install script
+│   ├── download-node.sh        # Download Node.js archives for all platforms
+│   ├── download-node-android.sh # Download Node.js for Android
+│   └── download-nssm.sh        # Download NSSM (Windows service manager)
 ├── .github/workflows/
-│   ├── build.yml               # CI: 构建全平台桌面安装包
-│   ├── android.yml             # CI: 构建 Android APK
-│   └── sync-gitee.yml          # 自动同步到 Gitee
-├── Dockerfile                  # Linux 容器构建
+│   ├── build.yml               # CI: Build desktop installers for all platforms
+│   ├── android.yml             # CI: Build Android APKs
+│   └── sync-gitee.yml          # Auto-sync to Gitee (disabled by default)
+├── Dockerfile                  # Linux container build
 └── docker-compose.yml
 ```
 
-### 前置依赖
+### Prerequisites
 
 - Node.js ≥ 22
 - pnpm ≥ 9
 - Rust (stable)
 - `cargo install tauri-cli --version "^2"`
 
-### 构建桌面安装包
+### Build Desktop Installer
 
 ```bash
-# 1. 下载 Node.js 归档到 resources/
+# 1. Download Node.js archives to resources/
 bash scripts/download-node.sh
 
-# 2. 安装前端依赖
+# 2. Install frontend dependencies
 cd apps/installer && pnpm install
 
-# 3. 构建（产物在 src-tauri/target/release/bundle/）
+# 3. Build (output in src-tauri/target/release/bundle/)
 npx tauri build
 ```
 
-### 构建 Linux（Docker）
+### Build Linux (Docker)
 
 ```bash
-# 下载 Node.js
 make download-node
-
-# 完整 Linux 构建
 make build-linux
 ```
 
-### 构建 Android
+### Build Android
 
 ```bash
-# 遥控器
+# Companion app
 cd apps/android && ./gradlew assembleRelease
 
-# Server（需先下载 Android Node.js）
+# Server app (download Android Node.js first)
 bash scripts/download-node-android.sh
 cd apps/android-server && ./gradlew assembleRelease
 ```
 
-### CI 自动构建
+### CI Auto-Build
 
-推送 tag 即触发全平台构建：
+Push a tag to trigger full cross-platform builds:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-GitHub Actions 会自动构建：
-- macOS ARM `.dmg`
-- macOS Intel `.dmg`
+GitHub Actions will build:
+- macOS ARM `.dmg` + macOS Intel `.dmg`
 - Windows `.msi` + `.exe`
 - Linux `.deb` + `.AppImage`
-- Android Companion `.apk`
-- Android Server `.apk`
+- Android Companion `.apk` + Android Server `.apk`
 
-构建产物发布到 [Releases](https://github.com/zsyc2601-ship-it/openclaw-installer/releases)。
+Artifacts are published to [Releases](https://github.com/zsyc2601-ship-it/openclaw-installer/releases).
 
 ---
 
-## 技术架构
+## Architecture
 
-| 组件 | 技术 |
-|------|------|
-| 桌面框架 | Tauri 2.x (Rust + WebView) |
-| 前端 | React 18 + TypeScript + Vite |
-| 状态管理 | Zustand |
-| 进度推送 | `tauri::ipc::Channel<T>` |
-| macOS 服务 | launchd (用户态) |
-| Windows 服务 | NSSM |
-| Linux 服务 | systemd --user |
+| Component | Technology |
+|-----------|-----------|
+| Desktop framework | Tauri 2.x (Rust + WebView) |
+| Frontend | React 18 + TypeScript + Vite |
+| State management | Zustand |
+| Progress streaming | `tauri::ipc::Channel<T>` |
+| macOS service | launchd (user-level) |
+| Windows service | NSSM |
+| Linux service | systemd --user |
 | Android UI | Kotlin + Jetpack Compose |
-| Android 扫码 | CameraX + ML Kit |
-| 中国加速 | npmmirror + Gitee 自动切换 |
+| Android QR scan | CameraX + ML Kit |
+| China acceleration | npmmirror + Gitee auto-switch |
