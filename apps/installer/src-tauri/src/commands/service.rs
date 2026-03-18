@@ -177,7 +177,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={node} {openclaw} up
+ExecStart="{node}" "{openclaw}" up
 Restart=always
 RestartSec=5
 Environment=PATH={node_dir}:/usr/local/bin:/usr/bin:/bin
