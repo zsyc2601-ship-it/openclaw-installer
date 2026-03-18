@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -8,7 +10,6 @@ const NPM_OFFICIAL: &str = "https://registry.npmjs.org";
 
 /// Probe which npm registry is faster. Prefer China mirror if reachable.
 fn pick_registry() -> &'static str {
-    // Try China mirror first with 3s timeout
     let client = match reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(3))
         .build()
@@ -29,8 +30,98 @@ fn pick_registry() -> &'static str {
     }
 }
 
+/// After npm install, scan bin dir and node_modules to find the actual openclaw binary.
+/// The package might register a bin with a different name.
+fn find_openclaw_binary(env: &EnvInfo) -> Option<PathBuf> {
+    let bin_dir = if cfg!(target_os = "windows") {
+        env.npm_prefix()
+    } else {
+        env.npm_prefix().join("bin")
+    };
+
+    // First: check the expected name
+    let expected = env.openclaw_bin();
+    if expected.exists() {
+        return Some(expected);
+    }
+
+    // Second: scan bin dir for anything openclaw-related
+    if let Ok(entries) = fs::read_dir(&bin_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if name.contains("openclaw") || name.contains("open-claw") {
+                return Some(entry.path());
+            }
+        }
+    }
+
+    // Third: check if the package installed but bin has a different name
+    // Look in node_modules/.package-lock.json or the package's package.json
+    let pkg_dir = env.npm_prefix().join("lib").join("node_modules");
+    if let Ok(entries) = fs::read_dir(&pkg_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if name.contains("openclaw") || name.contains("open-claw") {
+                // Found the package, read its package.json to find bin name
+                let pkg_json = entry.path().join("package.json");
+                if let Ok(content) = fs::read_to_string(&pkg_json) {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(bin) = json.get("bin") {
+                            // bin can be a string or an object
+                            match bin {
+                                serde_json::Value::String(_) => {
+                                    // bin points to a file, binary name = package name
+                                    let pkg_name = json.get("name")
+                                        .and_then(|n| n.as_str())
+                                        .unwrap_or("openclaw");
+                                    let bin_path = bin_dir.join(pkg_name);
+                                    if bin_path.exists() {
+                                        return Some(bin_path);
+                                    }
+                                }
+                                serde_json::Value::Object(map) => {
+                                    for (bin_name, _) in map {
+                                        let bin_path = bin_dir.join(bin_name);
+                                        if bin_path.exists() {
+                                            return Some(bin_path);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// List contents of bin directory for debugging.
+fn list_bin_dir(env: &EnvInfo) -> String {
+    let bin_dir = if cfg!(target_os = "windows") {
+        env.npm_prefix()
+    } else {
+        env.npm_prefix().join("bin")
+    };
+
+    let mut items = Vec::new();
+    if let Ok(entries) = fs::read_dir(&bin_dir) {
+        for entry in entries.flatten() {
+            items.push(entry.file_name().to_string_lossy().to_string());
+        }
+    }
+    if items.is_empty() {
+        format!("(bin dir {} is empty or missing)", bin_dir.display())
+    } else {
+        format!("bin dir contents: {}", items.join(", "))
+    }
+}
+
 /// Run `npm install -g openclaw@latest` using the bundled Node.js.
-pub fn install_openclaw(env: &EnvInfo) -> Result<(), String> {
+pub fn install_openclaw(env: &EnvInfo) -> Result<PathBuf, String> {
     let npm = env.npm_bin();
     let prefix = env.npm_prefix();
 
@@ -59,20 +150,29 @@ pub fn install_openclaw(env: &EnvInfo) -> Result<(), String> {
         .output()
         .map_err(|e| format!("Failed to run npm: {}", e))?;
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    log::info!("npm stdout: {}", stdout);
+    log::info!("npm stderr: {}", stderr);
+
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("npm install failed: {}", stderr));
+        return Err(format!("npm install failed:\n{}\n{}", stdout, stderr));
     }
 
-    if !env.openclaw_bin().exists() {
-        return Err(format!(
-            "openclaw binary not found after install at: {}",
-            env.openclaw_bin().display()
-        ));
+    // Find the actual binary
+    match find_openclaw_binary(env) {
+        Some(bin_path) => {
+            log::info!("openclaw binary found at: {}", bin_path.display());
+            Ok(bin_path)
+        }
+        None => {
+            let listing = list_bin_dir(env);
+            Err(format!(
+                "npm install succeeded but openclaw binary not found.\n{}\nnpm output: {}",
+                listing, stdout
+            ))
+        }
     }
-
-    log::info!("openclaw installed successfully");
-    Ok(())
 }
 
 /// Run `npm uninstall -g openclaw` using the bundled Node.js.

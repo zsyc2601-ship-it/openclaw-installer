@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::env_detect::EnvInfo;
@@ -15,9 +15,9 @@ fn plist_path(env: &EnvInfo) -> PathBuf {
         .join(format!("{}.plist", PLIST_LABEL))
 }
 
-fn generate_plist(env: &EnvInfo) -> String {
+fn generate_plist(env: &EnvInfo, openclaw_bin: &Path) -> String {
     let node_bin = env.node_bin().to_string_lossy().to_string();
-    let openclaw_bin = env.openclaw_bin().to_string_lossy().to_string();
+    let oc_bin = openclaw_bin.to_string_lossy().to_string();
     let logs_dir = env.logs_dir().to_string_lossy().to_string();
     let node_bin_dir = env.node_dir().join("bin").to_string_lossy().to_string();
 
@@ -51,13 +51,13 @@ fn generate_plist(env: &EnvInfo) -> String {
 </plist>"#,
         label = PLIST_LABEL,
         node = node_bin,
-        openclaw = openclaw_bin,
+        openclaw = oc_bin,
         logs = logs_dir,
         node_dir = node_bin_dir,
     )
 }
 
-fn register_launchd(env: &EnvInfo) -> Result<(), String> {
+fn register_launchd(env: &EnvInfo, openclaw_bin: &Path) -> Result<(), String> {
     fs::create_dir_all(env.logs_dir())
         .map_err(|e| format!("Cannot create logs dir: {}", e))?;
 
@@ -73,7 +73,7 @@ fn register_launchd(env: &EnvInfo) -> Result<(), String> {
             .output();
     }
 
-    fs::write(&plist, generate_plist(env))
+    fs::write(&plist, generate_plist(env, openclaw_bin))
         .map_err(|e| format!("Cannot write plist: {}", e))?;
 
     let output = Command::new("launchctl")
@@ -107,7 +107,7 @@ fn nssm_path(env: &EnvInfo) -> PathBuf {
     env.app_data_dir.join("nssm.exe")
 }
 
-fn register_nssm(env: &EnvInfo) -> Result<(), String> {
+fn register_nssm(env: &EnvInfo, openclaw_bin: &Path) -> Result<(), String> {
     let nssm = nssm_path(env);
     if !nssm.exists() {
         return Err(format!(
@@ -120,25 +120,21 @@ fn register_nssm(env: &EnvInfo) -> Result<(), String> {
         .map_err(|e| format!("Cannot create logs dir: {}", e))?;
 
     let node = env.node_bin().to_string_lossy().to_string();
-    let openclaw = env.openclaw_bin().to_string_lossy().to_string();
+    let oc_bin = openclaw_bin.to_string_lossy().to_string();
     let app_dir = env.app_data_dir.to_string_lossy().to_string();
     let log_out = env.logs_dir().join("gateway.out.log").to_string_lossy().to_string();
     let log_err = env.logs_dir().join("gateway.err.log").to_string_lossy().to_string();
 
-    // Remove existing service if present (ignore errors)
     let _ = Command::new(&nssm).args(["stop", "OpenClaw"]).output();
     let _ = Command::new(&nssm).args(["remove", "OpenClaw", "confirm"]).output();
 
-    // Install
-    let args_str = format!("\"{}\" up", openclaw);
+    let args_str = format!("\"{}\" up", oc_bin);
     run_cmd(&nssm, &["install", "OpenClaw", &node, &args_str])?;
     run_cmd(&nssm, &["set", "OpenClaw", "AppDirectory", &app_dir])?;
     run_cmd(&nssm, &["set", "OpenClaw", "DisplayName", "OpenClaw Gateway"])?;
     run_cmd(&nssm, &["set", "OpenClaw", "Start", "SERVICE_AUTO_START"])?;
     run_cmd(&nssm, &["set", "OpenClaw", "AppStdout", &log_out])?;
     run_cmd(&nssm, &["set", "OpenClaw", "AppStderr", &log_err])?;
-
-    // Start
     run_cmd(&nssm, &["start", "OpenClaw"])?;
 
     log::info!("Windows service registered via NSSM");
@@ -169,9 +165,9 @@ fn systemd_unit_path(env: &EnvInfo) -> PathBuf {
         .join(SYSTEMD_SERVICE_NAME)
 }
 
-fn generate_systemd_unit(env: &EnvInfo) -> String {
+fn generate_systemd_unit(env: &EnvInfo, openclaw_bin: &Path) -> String {
     let node_bin = env.node_bin().to_string_lossy().to_string();
-    let openclaw_bin = env.openclaw_bin().to_string_lossy().to_string();
+    let oc_bin = openclaw_bin.to_string_lossy().to_string();
     let node_bin_dir = env.node_dir().join("bin").to_string_lossy().to_string();
 
     format!(
@@ -190,12 +186,12 @@ Environment=PATH={node_dir}:/usr/local/bin:/usr/bin:/bin
 WantedBy=default.target
 "#,
         node = node_bin,
-        openclaw = openclaw_bin,
+        openclaw = oc_bin,
         node_dir = node_bin_dir,
     )
 }
 
-fn register_systemd(env: &EnvInfo) -> Result<(), String> {
+fn register_systemd(env: &EnvInfo, openclaw_bin: &Path) -> Result<(), String> {
     fs::create_dir_all(env.logs_dir())
         .map_err(|e| format!("Cannot create logs dir: {}", e))?;
 
@@ -205,7 +201,7 @@ fn register_systemd(env: &EnvInfo) -> Result<(), String> {
             .map_err(|e| format!("Cannot create systemd user dir: {}", e))?;
     }
 
-    fs::write(&unit_path, generate_systemd_unit(env))
+    fs::write(&unit_path, generate_systemd_unit(env, openclaw_bin))
         .map_err(|e| format!("Cannot write systemd unit: {}", e))?;
 
     run_cmd_str("systemctl", &["--user", "daemon-reload"])?;
@@ -236,13 +232,14 @@ fn unregister_systemd(env: &EnvInfo) -> Result<(), String> {
 
 // ─── Public API ──────────────────────────────────────────────
 
-pub fn register_service(env: &EnvInfo) -> Result<(), String> {
+/// Register service using the actual discovered openclaw binary path.
+pub fn register_service(env: &EnvInfo, openclaw_bin: &Path) -> Result<(), String> {
     if cfg!(target_os = "macos") {
-        register_launchd(env)
+        register_launchd(env, openclaw_bin)
     } else if cfg!(target_os = "windows") {
-        register_nssm(env)
+        register_nssm(env, openclaw_bin)
     } else {
-        register_systemd(env)
+        register_systemd(env, openclaw_bin)
     }
 }
 

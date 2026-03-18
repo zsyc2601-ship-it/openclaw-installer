@@ -34,47 +34,46 @@ pub async fn start_install(
     // Step 1: Detect environment
     send(
         &on_progress,
-        StepProgress::new(1, "检测系统环境", "检查操作系统、架构、磁盘空间..."),
+        StepProgress::new(1, "Detecting environment", "Checking OS, architecture, disk space..."),
     );
     let env = env_detect::detect()?;
     log::info!("Environment: {:?}", env);
 
-    // Ensure app data directory exists
     std::fs::create_dir_all(&env.app_data_dir)
         .map_err(|e| format!("Cannot create app data dir: {}", e))?;
 
     // Step 2: Extract Node.js
     send(
         &on_progress,
-        StepProgress::new(2, "释放 Node.js 运行时", "解压内嵌的 Node.js 22..."),
+        StepProgress::new(2, "Extracting Node.js", "Unpacking bundled Node.js 22..."),
     );
     node_setup::setup_node(&app_handle, &env)?;
 
-    // Step 3: Install OpenClaw
+    // Step 3: Install OpenClaw — returns the actual binary path
     send(
         &on_progress,
-        StepProgress::new(3, "安装 OpenClaw", "npm install -g openclaw@latest..."),
+        StepProgress::new(3, "Installing OpenClaw", "npm install -g openclaw@latest..."),
     );
-    openclaw::install_openclaw(&env)?;
+    let openclaw_bin = openclaw::install_openclaw(&env)?;
 
-    // Step 4: Register system service
+    // Step 4: Register system service using the discovered binary path
     send(
         &on_progress,
-        StepProgress::new(4, "注册系统服务", "配置开机自启..."),
+        StepProgress::new(4, "Registering service", "Configuring auto-start..."),
     );
-    service::register_service(&env)?;
+    service::register_service(&env, &openclaw_bin)?;
 
     // Step 5: Start and wait for gateway
     send(
         &on_progress,
-        StepProgress::new(5, "启动 Gateway", "等待服务就绪..."),
+        StepProgress::new(5, "Starting Gateway", "Waiting for service to be ready..."),
     );
     health::wait_for_healthy().await?;
 
     // Step 6: Done — need API key
     send(
         &on_progress,
-        StepProgress::new(6, "安装完成", "请配置 API Key"),
+        StepProgress::new(6, "Complete", "Please configure your API Key"),
     );
 
     Ok("awaiting_api_key".to_string())
@@ -87,32 +86,28 @@ pub async fn start_uninstall(
 ) -> Result<(), String> {
     let env = env_detect::detect()?;
 
-    // Step 1: Stop service
     send(
         &on_progress,
-        StepProgress::new(1, "停止服务", "停止 OpenClaw Gateway..."),
+        StepProgress::new(1, "Stopping service", "Stopping OpenClaw Gateway..."),
     );
     service::unregister_service(&env)?;
 
-    // Step 2: Uninstall openclaw
     send(
         &on_progress,
-        StepProgress::new(2, "卸载 OpenClaw", "npm uninstall -g openclaw..."),
+        StepProgress::new(2, "Uninstalling OpenClaw", "npm uninstall -g openclaw..."),
     );
     openclaw::uninstall_openclaw(&env)?;
 
-    // Step 3: Remove Node.js
     send(
         &on_progress,
-        StepProgress::new(3, "清理运行时", "移除内嵌 Node.js..."),
+        StepProgress::new(3, "Removing runtime", "Removing Node.js..."),
     );
     node_setup::remove_node(&env)?;
 
-    // Step 4: Optionally remove user data
     if remove_data {
         send(
             &on_progress,
-            StepProgress::new(4, "删除用户数据", "移除 ~/.openclaw/..."),
+            StepProgress::new(4, "Removing data", "Removing ~/.openclaw/..."),
         );
         let config_dir = env.openclaw_config_dir();
         if config_dir.exists() {
@@ -122,17 +117,15 @@ pub async fn start_uninstall(
     } else {
         send(
             &on_progress,
-            StepProgress::new(4, "保留用户数据", "配置和聊天记录已保留"),
+            StepProgress::new(4, "Keeping data", "Config and data preserved"),
         );
     }
 
-    // Step 5: Clean up app data
     send(
         &on_progress,
-        StepProgress::new(5, "清理完成", "所有组件已移除"),
+        StepProgress::new(5, "Done", "All components removed"),
     );
 
-    // Remove logs
     let logs_dir = env.logs_dir();
     if logs_dir.exists() {
         let _ = std::fs::remove_dir_all(&logs_dir);
