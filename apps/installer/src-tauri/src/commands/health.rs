@@ -16,7 +16,7 @@ pub async fn ping() -> bool {
     };
 
     match client.get(GATEWAY_URL).send().await {
-        Ok(resp) => resp.status().is_success(),
+        Ok(_) => true, // Any HTTP response means gateway is running (503 = needs API key)
         Err(_) => false,
     }
 }
