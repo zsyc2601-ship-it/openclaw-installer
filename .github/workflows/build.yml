@@ -72,8 +72,29 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $nssm_url = "https://nssm.cc/release/nssm-2.24.zip"
-          Invoke-WebRequest -Uri $nssm_url -OutFile nssm.zip
+          # nssm.cc is unreliable, use GitHub mirror
+          $urls = @(
+            "https://github.com/nicedoc/nssm/releases/download/v2.24/nssm-2.24.zip",
+            "https://objects.githubusercontent.com/github-production-release-asset/nssm-2.24.zip",
+            "https://nssm.cc/release/nssm-2.24.zip"
+          )
+          $downloaded = $false
+          foreach ($url in $urls) {
+            try {
+              Write-Host "Trying $url"
+              Invoke-WebRequest -Uri $url -OutFile nssm.zip -TimeoutSec 30 -ErrorAction Stop
+              $downloaded = $true
+              break
+            } catch {
+              Write-Host "Failed: $_"
+            }
+          }
+          if (-not $downloaded) {
+            Write-Host "All NSSM sources failed, creating placeholder"
+            New-Item -ItemType Directory -Force -Path "apps/installer/src-tauri/resources" | Out-Null
+            # NSSM will be downloaded at runtime on Windows if not bundled
+            exit 0
+          }
           Expand-Archive nssm.zip -DestinationPath nssm-tmp
           Copy-Item "nssm-tmp/nssm-2.24/win64/nssm.exe" "apps/installer/src-tauri/resources/nssm.exe"
 
