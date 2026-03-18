@@ -51,9 +51,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
-      - name: Download Node.js archive
+      - name: Download Node.js archive (current platform only)
         shell: bash
-        run: bash scripts/download-node.sh
+        run: |
+          NODE_VERSION="22.14.0"
+          TARGET_DIR="apps/installer/src-tauri/resources"
+          mkdir -p "$TARGET_DIR"
+          ARCH="${{ matrix.node-arch }}"
+          case "$ARCH" in
+            win-x64) EXT="zip" ;;
+            *)       EXT="tar.xz" ;;
+          esac
+          FILE="node-v${NODE_VERSION}-${ARCH}.${EXT}"
+          URL="https://nodejs.org/dist/v${NODE_VERSION}/${FILE}"
+          echo "Downloading $URL"
+          curl -fSL --progress-bar -o "$TARGET_DIR/$FILE" "$URL"
+          ls -lh "$TARGET_DIR/"
 
       - name: Download NSSM (Windows only)
         if: runner.os == 'Windows'

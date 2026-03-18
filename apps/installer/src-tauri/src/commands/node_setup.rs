@@ -19,9 +19,12 @@ fn find_node_archive(app_handle: &tauri::AppHandle, env: &EnvInfo) -> Result<Pat
         _ => return Err(format!("Unsupported platform: {}-{}", env.os, env.arch)),
     };
 
+    // Tauri bundles "resources/*" into Contents/Resources/resources/ on macOS,
+    // so we need the "resources/" prefix in the resolve path.
+    let resource_subpath = format!("resources/{}", archive_name);
     let resource_path = app_handle
         .path()
-        .resolve(archive_name, tauri::path::BaseDirectory::Resource)
+        .resolve(&resource_subpath, tauri::path::BaseDirectory::Resource)
         .map_err(|e| format!("Cannot resolve resource path: {}", e))?;
 
     if !resource_path.exists() {
